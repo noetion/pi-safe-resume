@@ -1,0 +1,48 @@
+{
+  "name": "pi-safe-resume",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pi extension that warns before an expensive cold continuation and offers a restart with the previous conversation attached",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\"",
+    "test:unit": "node --test \"test/risk.test.ts\" \"test/handoff.test.ts\" \"test/history.test.ts\" \"test/guard.test.ts\"",
+    "test:integration": "node --test \"test/integration.test.ts\" \"test/pi-loader.test.ts\""
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.86.1",
+    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@types/node": "^22.10.2",
+    "typebox": "^1.0.0",
+    "typescript": "^5.7.2"
+  }
+}
