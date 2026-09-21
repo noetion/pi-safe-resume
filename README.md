@@ -98,13 +98,13 @@ The extension warns only when every one of these holds.
 
 - The model publishes prompt-cache pricing.
 - Pi can estimate the context size.
-- A request that read or wrote the cache was observed, either live or from the transcript.
+- A request that read or wrote the cache was observed, either live, or from a `cache_warm` entry, or from a cache-relevant assistant message.
 - The time since that request started exceeds the cache lifetime Pi has for the model.
 - The estimated cold input cost reaches the threshold.
 
-The lifetime comes from the model's own metadata and the configured retention tier. `PI_CACHE_RETENTION` selects `short` or `long`, and `short` is the default, matching Pi's own resolution. Setting it to `none` turns caching off, so the extension stays quiet.
+The lifetime comes from the model's own metadata and the configured retention tier. `PI_CACHE_RETENTION` selects `short` or `long`, and `short` is the default, matching Pi's own resolution. No environment value turns caching off, so the extension never assumes it did.
 
-Retention runs from the start of the request that touched the cache, not from the end of its response, so a long generation does not appear to extend the entry's life. The extension records the request start from `before_provider_request` and promotes it to the cache reference only once a response reports a cache read or write. Under `long` retention a cache write costs twice the base input rate, and the estimate applies that rate.
+Retention runs from the start of the request that touched the cache, not from the end of its response, so a long generation does not appear to extend the entry's life. The extension records the request start from `before_provider_request` and promotes it to the cache reference only once a response reports a cache read or write. A long-retention cache write costs twice the base input rate, and the estimate applies that rate when the model publishes a long lifetime of its own.
 
 Pi refreshes an idle cache entry itself for a while after a run settles. Those refreshes do not pass through `before_provider_request`, so the extension reads the `cache_warm` usage entry Pi records and treats the later of the two as the reference.
 
@@ -117,7 +117,7 @@ Pi refreshes an idle cache entry itself for a while after a run settles. Those r
 - When a model publishes no cache lifetime, the warning says so and shows no expiry time. When it also publishes no cache pricing, the warning appears only if the context fills at least half the window, and it shows no dollar figure.
 - The extension cannot see a per-request cache retention override applied by another extension or by direct SDK use. It reads `PI_CACHE_RETENTION` and otherwise assumes `short`.
 - For a `/compact` restart the replacement session holds the handoff in memory. Pi creates a session file only after the first assistant message, so the file appears once you send your first message in the new session.
-- A session this process never observed takes its cache reference from a transcript timestamp. That timestamp marks a response, which is later than the request start, so the measured idle time is too small and the warning can arrive late rather than early. Pi's cache warmer covers part of that gap, and the rest is not.
+- A session this process never observed takes its cache reference from the newer of a `cache_warm` entry and a cache-relevant assistant message. Both mark a response, which is later than the request start, so the measured idle time is too small and the warning can arrive late rather than early.
 - Pi tears the old session down before it runs the replacement setup. If the switch then fails, the old context is already gone and the message cannot be put back in the editor. The extension records it in the previous session as a `safe-resume:pending` entry before the switch starts, and reports the failure.
 - Cancel restores the message text. Pi exposes no way to restore attached images, and the notice says so.
 - This is a resume-time warning. It is not a spending cap for Pi or for any other extension.
@@ -132,10 +132,10 @@ npm test
 
 Node 20 or later. The tests use Node's built-in runner with TypeScript type stripping, so there is no test framework to install.
 
-`npm test` runs 112 tests.
+`npm test` runs 118 tests.
 
-- `npm run test:unit` runs 69 tests over the cost and timing estimate, the guard state machine, handoff extraction, and transcript retrieval.
-- `npm run test:integration` runs 43 tests that drive the real extension factory against Pi's real `SessionManager` on real session files, and load the entry point through Pi's own extension loader.
+- `npm run test:unit` runs 73 tests over the cost and timing estimate, the guard state machine, handoff extraction, and transcript retrieval.
+- `npm run test:integration` runs 45 tests that drive the real extension factory against Pi's real `SessionManager` on real session files, and load the entry point through Pi's own extension loader.
 
 `test/pi-loader.test.ts` calls `discoverAndLoadExtensions`, so Pi compiles `src/index.ts` with its own loader and runs the factory against its own registration plumbing. It checks that every event handler, the tool, both commands, and the flag register without a loader error.
 
