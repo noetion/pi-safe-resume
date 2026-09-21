@@ -1,7 +1,7 @@
 /**
  * Loads the extension through Pi's own extension loader.
  *
- * This is the one check the rest of the suite cannot make: `loadExtensions`
+ * This is the one check the rest of the suite cannot make: `discoverAndLoadExtensions`
  * compiles the TypeScript entry point with Pi's loader and runs the factory
  * against Pi's registration plumbing. Everything else drives the factory with a
  * stand-in for that plumbing.

@@ -96,6 +96,16 @@ test("a short entry is returned whole and unmarked", () => {
   assert.equal(hits[0]?.truncated, false);
 });
 
+test("an entry that fits is returned whole even when the match sits past the window margin", () => {
+  // 507 characters with the match at index 501. The snippet window is 640
+  // characters, so the whole text fits and must not be clipped or labelled.
+  const text = `${"f".repeat(500)} needle`;
+  assert.equal(text.length, 507);
+  const hits = searchBranch([userEntry("u1", null, text)], "needle");
+  assert.equal(hits[0]?.text, text);
+  assert.equal(hits[0]?.truncated, false);
+});
+
 test("read returns a bounded excerpt and reports truncation", () => {
   const entries = [userEntry("u1", null, textOfTokens(5_000, "long"))];
   const excerpt = readEntry(entries, "u1", 500);
