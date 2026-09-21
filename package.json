@@ -5,6 +5,15 @@
   "description": "Pi extension that warns before an expensive cold continuation and offers a restart with the previous conversation attached",
   "type": "module",
   "license": "MIT",
+  "author": "Jonathan Asare",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noetion/pi-safe-resume.git"
+  },
+  "bugs": {
+    "url": "https://github.com/noetion/pi-safe-resume/issues"
+  },
+  "homepage": "https://github.com/noetion/pi-safe-resume#readme",
   "keywords": [
     "pi-package"
   ],
