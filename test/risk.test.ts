@@ -141,8 +141,10 @@ test("the retention tier follows PI_CACHE_RETENTION and defaults to short", () =
   assert.equal(resolveRetentionTier({}), "short");
   assert.equal(resolveRetentionTier({ PI_CACHE_RETENTION: "long" }), "long");
   assert.equal(resolveRetentionTier({ PI_CACHE_RETENTION: "short" }), "short");
-  assert.equal(resolveRetentionTier({ PI_CACHE_RETENTION: "none" }), "none");
   assert.equal(resolveRetentionTier({ PI_CACHE_RETENTION: "nonsense" }), "short");
+  // No provider adapter derives "none" from the environment. Pi keeps caching at
+  // the short tier, so the extension must not assume caching is off.
+  assert.equal(resolveRetentionTier({ PI_CACHE_RETENTION: "none" }), "short");
 });
 
 test("a long cache write costs twice the base input rate", () => {
@@ -151,9 +153,17 @@ test("a long cache write costs twice the base input rate", () => {
   closeTo(estimateColdCost(model, 500_000, "long").costUsd, 3);
 });
 
-test("a long tier does not re-price a provider that charges nothing for writes", () => {
-  const model = stubModel({ input: 3, cacheWrite: 0, promptCache: { long: 3600 } });
+test("a provider that charges nothing for writes is billed as plain input under either tier", () => {
+  const model = stubModel({ input: 3, cacheWrite: 0, promptCache: { short: 300, long: 3600 } });
   closeTo(estimateColdCost(model, 500_000, "long").costUsd, 1.5);
+  closeTo(estimateColdCost(model, 500_000, "short").costUsd, 1.5);
+  // The 2x rate must not be applied when nothing is billed as a write at all.
+  assert.equal(estimateColdCost(model, 500_000, "long").cacheWriteTokens, 0);
+});
+
+test("a model with no published long lifetime is not charged the long write rate", () => {
+  const model = stubModel({ input: 3, cacheWrite: 3.75, promptCache: { short: 300 } });
+  closeTo(estimateColdCost(model, 500_000, "long").costUsd, 1.875);
 });
 
 test("a long-retention session warns where the short-rate estimate would stay quiet", () => {
@@ -166,7 +176,7 @@ test("a long-retention session warns where the short-rate estimate would stay qu
   closeTo(long.estimate.costUsd, 1.5);
 });
 
-test("turning caching off stops the warning entirely", () => {
+test("a directly supplied none tier stops the warning", () => {
   assert.deepEqual(assessRisk(riskInput({ retentionTier: "none", retentionMs: undefined })), {
     kind: "pass",
     reason: "no-prompt-cache",
@@ -292,7 +302,7 @@ test("a live observation newer than any warm refresh stays the reference", () =>
   assert.deepEqual(latestCacheReference(entries, stubModel(), observed), observed);
 });
 
-test("without a live observation the warm entry, then the transcript, is used", () => {
+test("without a live observation the newest of the warm entry and the transcript is used", () => {
   const warmOnly = latestCacheReference([warmEntry("w1", null, NOW - 20 * MINUTE)], stubModel(), undefined);
   assert.equal(warmOnly?.requestStartedAt, NOW - 20 * MINUTE);
 
@@ -304,6 +314,33 @@ test("without a live observation the warm entry, then the transcript, is used", 
   assert.equal(assistantOnly?.requestStartedAt, NOW - 2 * HOUR);
 
   assert.equal(latestCacheReference([], stubModel(), undefined), undefined);
+});
+
+test("a stale warm entry does not hide a much later request", () => {
+  const entries = [
+    warmEntry("w1", null, NOW - 3 * HOUR),
+    assistantEntry("a1", "w1", "later reply", NOW - 5 * MINUTE, usage({ cacheRead: 1000 })),
+  ];
+  const chosen = latestCacheReference(entries, stubModel(), undefined);
+  assert.equal(chosen?.requestStartedAt, NOW - 5 * MINUTE);
+
+  // The reference drives the warning, so the stale warm entry must not produce one.
+  const model = stubModel({ promptCache: { short: 3600 } });
+  const input = riskInput({ model, timing: chosen, retentionMs: 3_600_000 });
+  assert.deepEqual(assessRisk(input), { kind: "pass", reason: "recent" });
+  assert.equal(
+    assessRisk({ ...input, timing: { ...chosen!, requestStartedAt: NOW - 3 * HOUR } }).kind,
+    "warn",
+    "the stale warm entry would have warned",
+  );
+});
+
+test("a warm entry newer than the transcript still wins", () => {
+  const entries = [
+    assistantEntry("a1", null, "reply", NOW - 3 * HOUR, usage({ cacheWrite: 1000 })),
+    warmEntry("w1", "a1", NOW - 5 * MINUTE),
+  ];
+  assert.equal(latestCacheReference(entries, stubModel(), undefined)?.requestStartedAt, NOW - 5 * MINUTE);
 });
 
 test("the warning threshold reads the environment, then the flag, then the default", () => {

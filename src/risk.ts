@@ -33,14 +33,15 @@ export const DEFAULT_UNKNOWN_EXPIRY_MS = 15 * 60_000;
 export const LARGE_CONTEXT_PERCENT = 50;
 
 /**
- * The retention tier this process asks for. Pi resolves `options.cacheRetention`
- * first, then `PI_CACHE_RETENTION`, then `short`. An extension cannot see the
- * per-request option, so this reads the environment and keeps `none` meaning
- * caching is off.
+ * The retention tier this process asks for.
+ *
+ * Pi resolves `options.cacheRetention` first, then `PI_CACHE_RETENTION`, then
+ * `short`. Every provider adapter reads that variable as `"long"` or nothing, so
+ * the environment can never turn caching off. Only the per-request option can,
+ * and an extension cannot see it. This therefore never returns `none`.
  */
 export function resolveRetentionTier(env: Record<string, string | undefined>): CacheRetentionTier {
-  const value = env.PI_CACHE_RETENTION;
-  return value === "none" || value === "long" ? value : "short";
+  return env.PI_CACHE_RETENTION === "long" ? "long" : "short";
 }
 
 /** Lifetime in ms of the entry a request writes, from the model's own retention metadata. */
@@ -85,8 +86,10 @@ function price(model: Model<any>, tokens: Partial<Usage>): number {
  *
  * A provider that charges for cache writes re-establishes the entry, so the
  * whole prompt is billed as a write; one that does not bills it as plain input.
- * Under long retention the write costs twice the base input rate, which Pi's
- * `calculateCost` applies from `cacheWrite1h`. Output tokens are excluded by
+ * A long-retention write costs twice the base input rate, which Pi's
+ * `calculateCost` applies from `cacheWrite1h`. Only Anthropic Messages and
+ * Bedrock Converse report that split, so the rate applies only when the model
+ * publishes a long lifetime of its own. Output tokens are excluded by
  * construction.
  */
 export function estimateColdCost(
@@ -97,7 +100,8 @@ export function estimateColdCost(
   const billsCacheWrite = model.cost.cacheWrite > 0;
   const cacheWriteTokens = billsCacheWrite ? contextTokens : 0;
   const uncachedInputTokens = billsCacheWrite ? 0 : contextTokens;
-  const longWrite = tier === "long" && cacheWriteTokens > 0 ? { cacheWrite1h: cacheWriteTokens } : {};
+  const billsLongWrite = tier === "long" && cacheWriteTokens > 0 && model.promptCache?.long !== undefined;
+  const longWrite = billsLongWrite ? { cacheWrite1h: cacheWriteTokens } : {};
   return {
     contextTokens,
     uncachedInputTokens,
@@ -120,6 +124,9 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   } = input;
 
   if (!model) return { kind: "pass", reason: "no-model" };
+  // Only a caller that resolved a per-request tier can reach this. The
+  // environment cannot, so it stays quiet rather than claiming Pi's caching is
+  // off when it is not.
   if (retentionTier === "none") return { kind: "pass", reason: "no-prompt-cache" };
   if (!hasPromptCache(model)) return { kind: "pass", reason: "no-prompt-cache" };
   if (contextTokens === null || contextTokens <= 0) return { kind: "pass", reason: "unknown-context" };
@@ -239,8 +246,13 @@ export function timingFromWarmEntries(entries: SessionEntry[]): CacheTiming | un
  * The most recent evidence that a cache entry was alive.
  *
  * A live observation is an exact request start, so it wins over a transcript
- * timestamp. A warm entry wins over a live observation only when it is newer,
- * because the warmer can refresh an entry after the agent's last request.
+ * timestamp, which marks a response end. A warm entry beats a live observation
+ * only when it is newer, because Pi's warmer can refresh an entry after the
+ * agent's last request.
+ *
+ * Without a live observation, both remaining sources are response ends for
+ * separate events, so the newer one is the better evidence. Taking the warm
+ * entry unconditionally would let a stale refresh hide a much later request.
  */
 export function latestCacheReference(
   entries: SessionEntry[],
@@ -248,10 +260,14 @@ export function latestCacheReference(
   observed: CacheTiming | undefined,
 ): CacheTiming | undefined {
   const warm = timingFromWarmEntries(entries);
-  if (observed && warm) {
-    return observed.requestStartedAt >= warm.requestStartedAt ? observed : warm;
+  if (observed) {
+    return warm && warm.requestStartedAt > observed.requestStartedAt ? warm : observed;
   }
-  return observed ?? warm ?? timingFromTranscript(entries, model);
+  const fromTranscript = timingFromTranscript(entries, model);
+  if (warm && fromTranscript) {
+    return warm.requestStartedAt >= fromTranscript.requestStartedAt ? warm : fromTranscript;
+  }
+  return warm ?? fromTranscript;
 }
 
 /** Read the warning threshold from the environment, falling back to the CLI flag. */
