@@ -119,6 +119,7 @@ export default function safeResume(pi: ExtensionAPI): void {
   let statusShown = false;
   let pendingHandoff: PendingHandoff | undefined;
   let restartWatchdog: ReturnType<typeof setTimeout> | undefined;
+  let watchdogFired = false;
   let retrievalDirty = false;
   let threshold = DEFAULT_WARN_ABOVE_USD;
 
@@ -257,6 +258,7 @@ export default function safeResume(pi: ExtensionAPI): void {
       if (!pendingHandoff) return;
       const stranded = pendingHandoff;
       pendingHandoff = undefined;
+      watchdogFired = true;
       guard.completeHandoff();
       retain(ctx.ui, stranded.action, "the replacement session never started");
     }, RESTART_WATCHDOG_MS);
@@ -303,6 +305,9 @@ export default function safeResume(pi: ExtensionAPI): void {
       clearTimeout(restartWatchdog);
       restartWatchdog = undefined;
     }
+    // Drop the pending restart. Nothing can be restored from here, and the
+    // message is already recorded in the source session as a PENDING_ENTRY.
+    pendingHandoff = undefined;
     guard.reset();
     tracker.reset();
     sourceCache.clear();
@@ -378,7 +383,10 @@ export default function safeResume(pi: ExtensionAPI): void {
     if (assessment.kind !== "warn") return;
 
     const action: PendingAction = { kind: "compact" };
-    if (decisionInFlight()) return { cancel: true };
+    if (decisionInFlight()) {
+      ctx.ui.notify("safe-resume: another safe-resume choice is still open.", "error");
+      return { cancel: true };
+    }
     if (!guard.intercept(action)) return;
 
     const choice = await askForChoice(ctx, assessment, action);
@@ -388,6 +396,7 @@ export default function safeResume(pi: ExtensionAPI): void {
     }
     if (choice === "cancel") {
       guard.cancel();
+      ctx.ui.notify("safe-resume: the compaction was cancelled.", "error");
       return { cancel: true };
     }
     dispatchRestart(ctx, action);
@@ -404,9 +413,13 @@ export default function safeResume(pi: ExtensionAPI): void {
       const pending = pendingHandoff;
       pendingHandoff = undefined;
       if (!pending) {
-        ctx.ui.notify("safe-resume: no pending restart.", "warning");
+        // A slow dispatch can arrive after the watchdog already gave the message
+        // back and said so. Repeating a second, contradictory notice helps nobody.
+        if (!watchdogFired) ctx.ui.notify("safe-resume: no pending restart.", "warning");
+        watchdogFired = false;
         return;
       }
+      watchdogFired = false;
 
       const { action, sourceSessionFile, sourceLeafId, handoff, handoffText } = pending;
       const newLink = buildSessionLink(sourceSessionFile, sourceLeafId, handoff, Date.now());

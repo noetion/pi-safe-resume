@@ -496,14 +496,14 @@ test("automatic compaction is never intercepted", async () => {
   }
 });
 
-test("a cancelled compaction is the only thing Cancel does", async () => {
+test("Cancel on a manual compaction cancels it and sends nothing", async () => {
   const { harness, ctx } = await setup({ selectResult: CANCEL_OPTION });
   const result = await harness.fire("session_before_compact", compactEvent("manual"), ctx);
   assert.deepEqual(result, { cancel: true });
   assert.equal(harness.sentUserMessages.length, 0);
 });
 
-test("a switch that rejects never throws a second error over the first", async () => {
+test("a rejected switch reports the failure without touching the stale context", async () => {
   const { harness, sm, ctx } = await setup({ selectResult: RESTART_OPTION });
   await harness.fire("input", inputEvent("please continue"), ctx);
   await harness.settleDispatch();
@@ -910,21 +910,33 @@ test("a restart whose command never runs gives the message back instead of stall
     // fire-and-forget dispatch looks like from the extension's side.
     assert.equal(harness.sentUserMessages.length, 1);
     await new Promise((resolve) => setTimeout(resolve, 5_100));
+
+    assert.deepEqual(ctx.recorded.editorTexts, ["please continue"]);
+    assert.match(
+      ctx.recorded.notifies.map((entry) => entry.message).join("\n"),
+      /the replacement session never started/,
+    );
+
+    // The guard must be usable again rather than stuck in handing-off. Cancel
+    // arms no further watchdog, so the test leaves no timer behind.
+    (ctx as unknown as { ui: { select: unknown } }).ui.select = async (title: string, choices: string[]) => {
+      ctx.recorded.selects.push({ title, options: choices });
+      return CANCEL_OPTION;
+    };
+    const later = await harness.fire("input", inputEvent("later"), ctx);
+    assert.equal(ctx.recorded.selects.length, 2);
+    assert.deepEqual(later, { action: "handled" });
+
+    // A dispatch that arrives after the watchdog stays quiet rather than
+    // contradicting the notice the developer already saw.
+    const late = commandCtxFor({ harness, sm: ctx.sessionManager as never, ctx }, async () => ({ cancelled: false }));
+    await harness.runCommand(RESTART_COMMAND, "", late);
+    assert.equal(late.recorded.notifies.length, 0);
   } finally {
     console.error = original;
   }
 
-  assert.deepEqual(ctx.recorded.editorTexts, ["please continue"]);
-  assert.match(
-    ctx.recorded.notifies.map((entry) => entry.message).join("\n"),
-    /the replacement session never started/,
-  );
-
-  // The guard must be usable again rather than stuck in handing-off.
-  const later = await harness.fire("input", inputEvent("later"), ctx);
-  assert.equal(ctx.recorded.selects.length, 2);
-  assert.deepEqual(later, { action: "handled" });
-  void errors;
+  assert.deepEqual(errors, [], "the watchdog must not log anything");
 });
 
 test("an approved retrieval allowance survives a restart", async () => {
@@ -942,5 +954,48 @@ test("an approved retrieval allowance survives a restart", async () => {
   const result = await callTool(harness, { action: "search", query: "findable" }, ctx);
   assert.equal(ctx.recorded.confirms.length, 0, "the expanded allowance must not be re-asked on every call");
   assert.match(result.text, /findable text/);
+});
+
+test("a session that ends mid-dispatch drops the pending restart", async () => {
+  const { harness, sm, ctx } = await setup({ selectResult: RESTART_OPTION });
+  await harness.fire("input", inputEvent("please continue"), ctx);
+  await harness.settleDispatch();
+  assert.equal(harness.sentUserMessages.length, 1, "the dispatch was issued");
+
+  // The session ends before the command runs.
+  await harness.fire("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+
+  let newSessionCalls = 0;
+  const late = commandCtxFor({ harness, sm, ctx }, async () => {
+    newSessionCalls += 1;
+    return { cancelled: false };
+  });
+  await harness.runCommand(RESTART_COMMAND, "", late);
+
+  assert.match(late.recorded.notifies[0]?.message ?? "", /no pending restart/);
+  assert.equal(newSessionCalls, 0, "no restart may run against the old session");
+});
+
+test("a manual compaction during an open choice is cancelled and says so", async () => {
+  const { harness, ctx } = await setup({ selectResult: RESTART_OPTION });
+
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  (ctx as unknown as { ui: { select: unknown } }).ui.select = async (title: string, choices: string[]) => {
+    ctx.recorded.selects.push({ title, options: choices });
+    await gate;
+    return RESTART_OPTION;
+  };
+
+  const first = harness.fire("input", inputEvent("first"), ctx);
+  const compact = await harness.fire("session_before_compact", compactEvent("manual"), ctx);
+
+  assert.deepEqual(compact, { cancel: true });
+  assert.match(ctx.recorded.notifies[0]?.message ?? "", /another safe-resume choice is still open/);
+
+  release?.();
+  await first;
 });
 
