@@ -72,7 +72,9 @@ export function capToBytes(text: string, maxBytes: number): { text: string; trun
     return { text: head.content, truncated: head.truncated };
   }
   if (limit <= FALLBACK_SUFFIX.length) {
-    return { text: FALLBACK_SUFFIX.slice(0, limit), truncated: true };
+    // Too small for a label. Keep the head of the text rather than a prefix of
+    // the label, so a tiny budget still returns content.
+    return { text: text.slice(0, limit), truncated: true };
   }
   const room = limit - Buffer.byteLength(FALLBACK_SUFFIX, "utf8");
   const kept = Buffer.from(text, "utf8").subarray(0, room).toString("utf8").replace(/\uFFFD+$/, "");
