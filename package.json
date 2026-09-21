@@ -1,7 +1,6 @@
 {
   "name": "pi-safe-resume",
   "version": "1.0.0",
-  "private": true,
   "description": "Pi extension that warns before an expensive cold continuation and offers a restart with the previous conversation attached",
   "type": "module",
   "license": "MIT",
@@ -16,6 +15,11 @@
   "homepage": "https://github.com/noetion/pi-safe-resume#readme",
   "keywords": [
     "pi-package"
+  ],
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
