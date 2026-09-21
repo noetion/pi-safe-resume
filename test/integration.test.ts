@@ -856,6 +856,16 @@ test("the replacement session reaches its source link even though session_start 
   const found = await callTool(late, { action: "search", query: "EARLIER-DETAIL" }, lateCtx);
   assert.match(found.text, /flange is 12mm/);
   assert.doesNotMatch(found.text, /No previous conversation is linked/);
+
+  // The status line has the same ordering problem, so it is reported on settle.
+  await late.fire("agent_settled", { type: "agent_settled" }, lateCtx);
+  assert.deepEqual(
+    lateCtx.recorded.statuses.filter((entry) => entry.key === "safe-resume").map((entry) => entry.text),
+    ["previous context: 12 tokens"],
+  );
+
+  await late.fire("agent_settled", { type: "agent_settled" }, lateCtx);
+  assert.equal(lateCtx.recorded.statuses.length, 1, "the status is reported once per instance");
 });
 
 test("a decision already in flight never lets a second action reach the provider", async () => {

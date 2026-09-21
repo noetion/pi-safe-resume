@@ -115,6 +115,7 @@ export default function safeResume(pi: ExtensionAPI): void {
   const budget = new RetrievalBudget();
 
   let link: SessionLink | undefined;
+  let statusShown = false;
   let pendingHandoff: PendingHandoff | undefined;
   let restartWatchdog: ReturnType<typeof setTimeout> | undefined;
   let retrievalDirty = false;
@@ -139,6 +140,18 @@ export default function safeResume(pi: ExtensionAPI): void {
   const historySource = (ctx: ExtensionContext): HistorySource | undefined => {
     const resolved = resolveLink(ctx);
     return resolved ? { sessionFile: resolved.sourceSessionFile, leafId: resolved.sourceLeafId } : undefined;
+  };
+
+  /**
+   * Report the linked previous session once per instance. On a live restart the
+   * link arrives after `session_start`, so this also runs when a run settles.
+   */
+  const showLinkStatus = (ctx: ExtensionContext): void => {
+    if (statusShown) return;
+    const resolved = resolveLink(ctx);
+    if (!resolved) return;
+    statusShown = true;
+    ctx.ui.setStatus("safe-resume", `previous context: ${resolved.handoffTokens} tokens`);
   };
 
   /**
@@ -261,6 +274,7 @@ export default function safeResume(pi: ExtensionAPI): void {
     tracker.reset();
     sourceCache.clear();
     link = undefined;
+    statusShown = false;
 
     const flagValue = pi.getFlag(THRESHOLD_FLAG);
     threshold = readWarnAboveUsd(process.env, typeof flagValue === "string" ? flagValue : undefined);
@@ -280,10 +294,7 @@ export default function safeResume(pi: ExtensionAPI): void {
     }
     tracker.restore(restoredTiming);
     budget.restore(restoredAllowance, restoredSpend);
-
-    if (link) {
-      ctx.ui.setStatus("safe-resume", `previous context: ${link.handoffTokens} tokens`);
-    }
+    showLinkStatus(ctx);
   });
 
   pi.on("session_shutdown", () => {
@@ -310,8 +321,9 @@ export default function safeResume(pi: ExtensionAPI): void {
     if (timing) pi.appendEntry(TIMING_ENTRY, timing);
   });
 
-  pi.on("agent_settled", () => {
+  pi.on("agent_settled", (_event, ctx) => {
     guard.settle();
+    showLinkStatus(ctx);
     // Write the retrieval spend once per run rather than inside tool execution,
     // which would splice an entry between an assistant message and its results.
     if (retrievalDirty) {
