@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\"",
     "test:unit": "node --test \"test/risk.test.ts\" \"test/handoff.test.ts\" \"test/history.test.ts\" \"test/guard.test.ts\"",
-    "test:integration": "node --test \"test/integration.test.ts\""
+    "test:integration": "node --test \"test/integration.test.ts\" \"test/pi-loader.test.ts\""
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

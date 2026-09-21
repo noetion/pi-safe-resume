@@ -132,10 +132,12 @@ npm test
 
 Node 20 or later. The tests use Node's built-in runner with TypeScript type stripping, so there is no test framework to install.
 
-`npm test` runs 111 tests.
+`npm test` runs 112 tests.
 
 - `npm run test:unit` runs 69 tests over the cost and timing estimate, the guard state machine, handoff extraction, and transcript retrieval.
-- `npm run test:integration` runs 42 tests that drive the real extension factory against Pi's real `SessionManager` on real session files.
+- `npm run test:integration` runs 43 tests that drive the real extension factory against Pi's real `SessionManager` on real session files, and load the entry point through Pi's own extension loader.
+
+`test/pi-loader.test.ts` calls `discoverAndLoadExtensions`, so Pi compiles `src/index.ts` with its own loader and runs the factory against its own registration plumbing. It checks that every event handler, the tool, both commands, and the flag register without a loader error.
 
 The integration tests replace one thing, which is Pi's runtime binding of events to handlers. `test/pi-stub.ts` replays the arguments Pi dispatches for `input`, `session_before_compact`, `before_provider_request`, `message_end`, `agent_settled`, and `session_start`. The rule that `pi.sendUserMessage("/cmd", { expandPromptTemplates: true })` runs an extension command without sending a prompt is read from Pi's published source in `dist/core/agent-session.js` rather than executed here.
 
@@ -152,8 +154,9 @@ src/
   history.ts   bounded transcript search and read
   types.ts     shared data shapes
 test/
-  helpers.ts       fixtures with a fixed clock and stub models
-  pi-stub.ts       recording stand-in for the Pi extension API
+  helpers.ts         fixtures with a fixed clock and stub models
+  pi-stub.ts         recording stand-in for the Pi extension API
+  pi-loader.test.ts  loads the entry point through Pi's own loader
   risk.test.ts
   guard.test.ts
   handoff.test.ts
