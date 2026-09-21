@@ -533,8 +533,13 @@ test("a switch that rejects never throws a second error over the first", async (
   assert.equal(failing.recorded.editorTexts.length, 0);
   const reported = errors.join("\n");
   assert.match(reported, /the session switch failed \(switch refused\)/);
-  assert.match(reported, /Recover this message: please continue/);
+  assert.match(reported, new RegExp(`recorded in .* as a safe-resume:pending entry`));
   assert.equal(harness.sentUserMessages.filter((m) => m.content === "please continue").length, 0);
+
+  // The message must be recoverable from the source transcript, not only the log.
+  const recorded = harness.appended.filter((entry) => entry.customType === "safe-resume:pending");
+  assert.equal(recorded.length, 1);
+  assert.equal((recorded[0]?.data as { text?: string }).text, "please continue");
 });
 
 test("a message that cannot be sent into the new session is recovered there", async () => {

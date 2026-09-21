@@ -118,7 +118,7 @@ Pi refreshes an idle cache entry itself for a while after a run settles. Those r
 - The extension cannot see a per-request cache retention override applied by another extension or by direct SDK use. It reads `PI_CACHE_RETENTION` and otherwise assumes `short`.
 - For a `/compact` restart the replacement session holds the handoff in memory. Pi creates a session file only after the first assistant message, so the file appears once you send your first message in the new session.
 - A session this process never observed takes its cache reference from a transcript timestamp. That timestamp marks a response, which is later than the request start, so the measured idle time is too small and the warning can arrive late rather than early. Pi's cache warmer covers part of that gap, and the rest is not.
-- Pi tears the old session down before it runs the replacement setup. If the switch then fails, the old context is already gone and the message cannot be put back in the editor. The extension writes it to the terminal instead and reports the failure.
+- Pi tears the old session down before it runs the replacement setup. If the switch then fails, the old context is already gone and the message cannot be put back in the editor. The extension records it in the previous session as a `safe-resume:pending` entry before the switch starts, and reports the failure.
 - Cancel restores the message text. Pi exposes no way to restore attached images, and the notice says so.
 - This is a resume-time warning. It is not a spending cap for Pi or for any other extension.
 

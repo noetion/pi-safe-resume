@@ -47,6 +47,7 @@ import type { CacheTiming, Handoff, HistorySource, PendingAction, RiskAssessment
 const LINK_ENTRY = "safe-resume:link";
 const TIMING_ENTRY = "safe-resume:timing";
 const RETRIEVAL_ENTRY = "safe-resume:retrieval";
+const PENDING_ENTRY = "safe-resume:pending";
 const RESTART_COMMAND = "safe-resume-restart";
 const STATUS_COMMAND = "safe-resume";
 const THRESHOLD_FLAG = "safe-resume-warn-usd";
@@ -410,6 +411,13 @@ export default function safeResume(pi: ExtensionAPI): void {
       const { action, sourceSessionFile, sourceLeafId, handoff, handoffText } = pending;
       const newLink = buildSessionLink(sourceSessionFile, sourceLeafId, handoff, Date.now());
 
+      // Record the message before the switch. Pi tears the old session down before
+      // it runs setup, so a later failure leaves no live context to restore into,
+      // and this entry is what keeps the message recoverable.
+      if (action.kind === "message") {
+        pi.appendEntry(PENDING_ENTRY, { text: action.text, images: action.images?.length ?? 0, at: Date.now() });
+      }
+
       let cancelled = false;
       try {
         const result = await ctx.newSession({
@@ -458,7 +466,9 @@ export default function safeResume(pi: ExtensionAPI): void {
         guard.completeHandoff();
         console.error(
           `safe-resume: the session switch failed (${messageOf(error)}).` +
-            (action.kind === "message" ? ` Recover this message: ${action.text}` : ""),
+            (action.kind === "message"
+              ? ` Your message is recorded in ${sourceSessionFile} as a ${PENDING_ENTRY} entry.`
+              : ""),
         );
         return;
       }
