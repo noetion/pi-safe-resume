@@ -120,7 +120,7 @@ npm run typecheck
 npm test
 ```
 
-Node 20 or later. The tests use Node's built-in runner with TypeScript type stripping, so there is no framework to install. `npm test` runs 118 tests: 73 unit over the cost and timing estimate, the guard state machine, handoff extraction, and transcript retrieval; 45 integration that drive the real extension factory against Pi's real `SessionManager` on real session files, and load the entry point through Pi's own extension loader.
+Node 22.19.0 or later, matching the pinned Pi 0.86.1 dependency's minimum. CI checks Node 22.19.0 and Node 24. The tests use Node's built-in runner with TypeScript type stripping, so there is no framework to install. `npm test` runs 118 tests: 73 unit over the cost and timing estimate, the guard state machine, handoff extraction, and transcript retrieval; 45 integration that drive the real extension factory against Pi's real `SessionManager` on real session files, and load the entry point through Pi's own extension loader.
 
 The automated suite does not launch the Pi CLI or its terminal UI, because the choice dialog needs an interactive or RPC client to answer it.
 
